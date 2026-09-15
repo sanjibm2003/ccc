@@ -29,7 +29,7 @@ var SH_LOG = 'Log';
    compares this against what it expects and warns you if the deployment is
    stale — the most common upgrade mistake is editing Code.gs but forgetting
    Deploy > Manage deployments > New version. */
-var BACKEND_VERSION = 17;
+var BACKEND_VERSION = 24;
 
 var ACT_COLS = ['id','date','startTime','endTime','kind','type','level','title','oppId','customer',
                 'partner','partnerType','zone','location','veeamStakeholder','se','audience','partnerTier',
@@ -83,12 +83,35 @@ function doGet() {
   return json({ ok: false, error: 'This site is private. Open it and enter your access token.' });
 }
 
+/* Actions that change the Sheet. Two of these must never run at the same
+   moment: both compute "the next empty row" and would fight over it. */
+var WRITES = { saveActivity:1, deleteActivity:1, saveOpportunity:1, deleteOpportunity:1,
+               savePartner:1, deletePartner:1, saveAvailability:1, saveLayout:1,
+               saveLists:1, renameValue:1, importAll:1, importPart:1,
+               bulkSave:1, bulkDelete:1, syncOutlook:1, outlookPush:1 };
+
 function doPost(e) {
+  var lock = null;
   try {
     var body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     var authErr = tokenProblem(body.token);
     if (authErr) return json({ ok: false, error: authErr, needsSetup: !storedToken() });
     var p = body.payload || {};
+
+    /* Take the document lock before touching anything. Without this, the page
+       saving an activity and its opportunity at the same time produced
+       "Service Spreadsheets failed while accessing document" at random — it
+       looked like the Sheet was broken, but it was two of our own writes
+       colliding. 30s is generous; a write takes well under a second. */
+    if (WRITES[body.action]) {
+      lock = LockService.getDocumentLock();
+      if (!lock.tryLock(30000)) {
+        return json({ ok: false, busy: true,
+          error: 'The Sheet was busy with another save and did not free up in 30 seconds. ' +
+                 'Nothing was written — press Save again.' });
+      }
+    }
+
     switch (body.action) {
 
       case 'ping':
@@ -158,6 +181,8 @@ function doPost(e) {
     }
   } catch (err) {
     return json({ ok: false, error: String(err && err.message || err) });
+  } finally {
+    if (lock) { try { lock.releaseLock(); } catch (e) {} }
   }
 }
 

@@ -1,5 +1,5 @@
 /* =========================================================================
-   Channel Command Center — v23  (built 2026-08-14)
+   Channel Command Center — v24  (built 2026-08-14)
    -------------------------------------------------------------------------
    CONFIG — the only file you need to edit.
    Nothing here is secret; your access token is never stored in this file.

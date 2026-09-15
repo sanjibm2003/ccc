@@ -68,6 +68,33 @@ function gf() {
            stake: $('#fStake').value, partner: $('#fPartner').value,
            text: $('#fSearch').value.trim().toLowerCase(), range: periodRange() };
 }
+/* Run a list of request-makers strictly in sequence, stopping at the first
+   failure. Written as thunks so nothing starts until its turn. */
+function runInOrder(thunks) {
+  var out = [];
+  return thunks.reduce(function (chain, make) {
+    return chain.then(function () {
+      return withRetry(make).then(function (r) { out.push(r); });
+    });
+  }, Promise.resolve()).then(function () { return out; });
+}
+
+/* Google occasionally answers a write with a transient "failed while accessing
+   document". One quiet retry turns that from a visible error into a non-event. */
+function withRetry(make, tries) {
+  tries = tries || 2;
+  return make().catch(function (e) {
+    var transient = /failed while accessing|being edited|try again|busy|timed out|internal error/i
+      .test(String(e && e.message));
+    if (tries > 1 && transient) {
+      return new Promise(function (res) { setTimeout(res, 800); }).then(function () {
+        return withRetry(make, tries - 1);
+      });
+    }
+    throw e;
+  });
+}
+
 /* ====================================================================== */
 /*  DRILL — "show me exactly those records"                               */
 /* ====================================================================== */
@@ -1661,7 +1688,7 @@ function saveActNow(mode) {
   S.upsert('activities', rec, A.normActivity);
   if (['Internal','Partner','End Customer'].indexOf(rec.partner) === -1) ensurePartner(rec.partner, rec.partnerType);
 
-  var jobs = [S.api('saveActivity', rec)];
+  var jobs = [function () { return S.api('saveActivity', rec); }];
 
   /* roll the opportunity forward */
   var o = S.oppMap[rec.oppId];
@@ -1684,14 +1711,17 @@ function saveActNow(mode) {
     if (ce) upd.contactEmail = ce;
     var ro = A.normOpp(upd);
     S.upsert('opportunities', ro, A.normOpp);
-    jobs.push(S.api('saveOpportunity', ro));
+    jobs.push(function () { return S.api('saveOpportunity', ro); });
   }
   if ($('#a_block').checked) {
     var av = blockBusy(rec.date, rec.startTime, rec.endTime);
-    if (av) jobs.push(S.api('saveAvailability', { days: [av] }));
+    if (av) jobs.push(function () { return S.api('saveAvailability', { days: [av] }); });
   }
   $('#actSave').disabled = true;
-  Promise.all(jobs).then(function () {
+  /* One at a time. These three writes touch the same Sheet, and firing them
+     together is what caused the random "Sheet said..." failures: three Apps
+     Script executions racing for the same next-empty-row. */
+  runInOrder(jobs).then(function () {
     if (stageHeld) {
       A.toast(stageHeld.deal + ' stays at ' + stageHeld.at + ' — “' + stageHeld.tried +
               '” is recorded on the activity, but a deal only moves forward', 6500);
@@ -2584,7 +2614,7 @@ function start() {
   $('#subline').textContent = (CFG.ownerName || '') + (CFG.ownerRole ? ' · ' + CFG.ownerRole : '');
   $('#srcLabel').textContent = S.activities.length + ' activities · ' + S.opportunities.length + ' opportunities';
   $('#footer').innerHTML = esc(CFG.ownerName) + ' · all times ' + esc(CFG.timezoneLabel) +
-    ' · everything stored in your private Google Sheet · <b>v23</b>';
+    ' · everything stored in your private Google Sheet · <b>v24</b>';
   layout = normLayout(S.layout && S.layout.length ? S.layout : defaultLayout());
 
   /* The commonest upgrade mistake: new Code.gs pasted, but no new deployment. */
