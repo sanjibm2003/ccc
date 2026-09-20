@@ -500,7 +500,12 @@ function buildFilters() {
   fillSel($('#eAud'), uniqOf(en, 'audience'), 'All audiences');
   fillSel($('#eMode'), A.L.mode, 'All modes');
   fillSel($('#eStatus'), A.L.status, 'All statuses');
-  fillSel($('#pStage'), A.L.stage.filter(function (s) { return S.opportunities.some(function (o) { return o.stage === s; }); }), 'All stages');
+  /* Stages in use, plus the closing ones always, so you can filter to
+     Closed-Won before your first deal lands there. */
+  var used = A.L.stage.filter(function (s) {
+    return S.opportunities.some(function (o) { return o.stage === s; }) || A.stageClosed(s);
+  });
+  fillSel($('#pStage'), used, 'All stages');
   fillSel($('#pProd'), S.uniq('opportunities', 'product'), 'All products');
   fillSel($('#pInd'), S.uniq('opportunities', 'industry'), 'All industries');
 
@@ -1103,7 +1108,11 @@ function pipeRows() {
   var st = $('#pState').value, sg = $('#pStage').value, pr = $('#pProd').value,
       ind = $('#pInd').value, fl = $('#pFlag').value;
   return fOpps().filter(function (o) {
-    if (st && o.state !== st) return false;
+    /* If you have named a stage, that is what you asked for — the State filter
+       must not quietly contradict it. Choosing Closed-Won while State said
+       "Open only" previously returned nothing, which looked like the board
+       could not show closed deals. */
+    if (st && !sg && o.state !== st) return false;
     if (sg && o.stage !== sg) return false;
     if (pr && o.product !== pr) return false;
     if (ind && o.industry !== ind) return false;
@@ -1121,8 +1130,21 @@ function renderPipe() {
   if (pipeView === 'board') renderBoard(rows); else renderOppTable(rows);
 }
 function renderBoard(rows) {
-  var stages = A.L.stage.filter(function (s) {
-    return s.indexOf('Closed') !== 0 || rows.some(function (o) { return o.stage === s; });
+  var picked = $('#pStage').value;
+  var state  = $('#pState').value;
+  var stages;
+  if (picked) {
+    stages = [picked];                       /* one stage asked for, one column */
+  } else {
+    var closed = A.L.stage.filter(function (s) { return A.stageClosed(s); });
+    var open   = A.L.stage.filter(function (s) { return !A.stageClosed(s); });
+    if (state === 'Closed')      stages = closed;
+    else if (state === 'Open')   stages = open;
+    else                         stages = open.concat(closed);   /* All */
+  }
+  /* Never drop a column that actually holds something. */
+  A.L.stage.forEach(function (s) {
+    if (stages.indexOf(s) < 0 && rows.some(function (o) { return o.stage === s; })) stages.push(s);
   });
   $('#board').innerHTML = stages.map(function (s) {
     var items = rows.filter(function (o) { return o.stage === s; });
@@ -2614,7 +2636,7 @@ function start() {
   $('#subline').textContent = (CFG.ownerName || '') + (CFG.ownerRole ? ' · ' + CFG.ownerRole : '');
   $('#srcLabel').textContent = S.activities.length + ' activities · ' + S.opportunities.length + ' opportunities';
   $('#footer').innerHTML = esc(CFG.ownerName) + ' · all times ' + esc(CFG.timezoneLabel) +
-    ' · everything stored in your private Google Sheet · <b>v24</b>';
+    ' · everything stored in your private Google Sheet · <b>v25</b>';
   layout = normLayout(S.layout && S.layout.length ? S.layout : defaultLayout());
 
   /* The commonest upgrade mistake: new Code.gs pasted, but no new deployment. */
