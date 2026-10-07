@@ -493,3 +493,59 @@ tr.selrow:hover{background:var(--g-l)!important}
   font-size:11px;line-height:1.5;white-space:nowrap;cursor:pointer;color:var(--ink);
   max-width:200px;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto}
 .av .fdact:hover{background:#fff;box-shadow:0 1px 3px rgba(29,31,42,.18)}
+
+/* ======================================================================
+   PARTNER COE — portfolio, heatmap and the 41-item checklist
+   ====================================================================== */
+.mo-wide{max-width:1120px}
+.coecards{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));margin-top:14px}
+.coec{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;
+  cursor:pointer;transition:.12s}
+.coec:hover{border-color:var(--g);box-shadow:0 3px 12px rgba(29,31,42,.08)}
+.coec .ch{display:flex;align-items:flex-start;gap:8px;margin-bottom:8px}
+.coec .nm{font-weight:700;font-size:13.5px;line-height:1.3;flex:1;min-width:0}
+.coec .meta{font-size:11.5px;color:var(--ink3);margin-top:1px;font-weight:500}
+.coec .big{font-size:24px;font-weight:800;letter-spacing:-.6px;line-height:1}
+.coec .track{height:7px;border-radius:4px;background:var(--line2);overflow:hidden;margin:9px 0 7px}
+.coec .track i{display:block;height:100%;border-radius:4px}
+.coec .dots{display:flex;gap:4px;flex-wrap:wrap;margin-top:8px}
+.coec .dot7{font-size:9.5px;font-weight:800;padding:2px 5px;border-radius:4px;color:#fff;letter-spacing:.2px}
+.coec .foot{display:flex;gap:10px;flex-wrap:wrap;font-size:11.5px;color:var(--ink3);margin-top:9px;
+  padding-top:8px;border-top:1px solid var(--line2)}
+.coec .foot b{color:var(--ink2)}
+.ragchip{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;
+  padding:2px 7px;border-radius:20px;color:#fff;white-space:nowrap}
+.blk{color:var(--red);font-weight:750}
+
+.coeheat{overflow-x:auto;border:1px solid var(--line);border-radius:9px;margin-top:14px}
+.coeheat table{margin:0}
+.coeheat td.hc{text-align:center;font-weight:750;color:#fff;font-size:11.5px;min-width:54px}
+.coeheat td.pn{font-weight:650;white-space:nowrap}
+
+.coebar{height:9px;border-radius:5px;background:var(--line2);overflow:hidden;margin:4px 0 14px}
+.coebar i{display:block;height:100%;border-radius:5px;background:var(--grad-solid,var(--g-d))}
+.domain{border:1px solid var(--line);border-radius:9px;margin-bottom:10px;overflow:hidden}
+.dhead{display:flex;align-items:center;gap:9px;padding:9px 12px;background:#F8FAFB;
+  border-bottom:1px solid var(--line);font-size:12.5px;font-weight:700;cursor:pointer}
+.dhead .dn{flex:1}
+.dhead .dp{font-weight:800;font-variant-numeric:tabular-nums}
+.dbody{padding:4px 0}
+.domain.closed .dbody{display:none}
+.ci{display:grid;grid-template-columns:minmax(0,1fr) 128px 104px 118px 118px minmax(0,1fr);
+  gap:8px;align-items:center;padding:6px 12px;border-bottom:1px solid var(--line2)}
+.ci:last-child{border-bottom:0}
+.ci .cname{font-size:12.5px;line-height:1.35}
+.ci select,.ci input{border:1px solid var(--line);border-radius:6px;padding:4px 6px;font-size:12px;
+  width:100%;background:#fff;font-family:inherit}
+.ci .st-Done{border-color:#9FE3BC;background:#F2FCF6}
+.ci .st-Blocked{border-color:#FBC4C9;background:#FFF6F7}
+.ci .st-In{border-color:#BFE4F5;background:#F5FBFE}
+.cihead{display:grid;grid-template-columns:minmax(0,1fr) 128px 104px 118px 118px minmax(0,1fr);
+  gap:8px;padding:5px 12px;font-size:10px;text-transform:uppercase;letter-spacing:.4px;
+  color:var(--ink3);font-weight:750;background:#FCFDFD;border-bottom:1px solid var(--line2)}
+@media(max-width:900px){
+  /* minmax(0,…) not a bare 1fr: an item name longer than the column would
+     otherwise widen the row and push the status control off the screen. */
+  .ci,.cihead{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .cihead{display:none}
+}

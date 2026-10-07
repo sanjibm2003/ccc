@@ -401,6 +401,188 @@ function stageClosed(stage) {
   return s.indexOf('Closed') === 0;
 }
 
+
+/* ---------------------------------------------------------- Partner COE
+   The Partner Centre of Excellence readiness model, carried over from the
+   standalone COE dashboard. Seven domains, 41 items. Scoring is deliberately
+   identical to that tool so the percentages you have already reported do not
+   move: Done counts 1, In progress a half, Blocked and Not started nothing.
+
+   The old dashboard kept all of this in localStorage, which meant one browser
+   on one machine. Here it lives in the Sheet with everything else. */
+var COE_DOMAINS = [
+  { code: 'SETUP', name: 'Foundation & Infrastructure Setup', short: 'Setup' },
+  { code: 'A', name: 'Core Backup & Recovery',            short: 'A' },
+  { code: 'B', name: 'Instant Recovery & Portability',    short: 'B' },
+  { code: 'C', name: 'SureBackup & Recovery Assurance',   short: 'C' },
+  { code: 'D', name: 'Cyber Resilience & Ransomware',     short: 'D' },
+  { code: 'E', name: 'Modern Workloads',                  short: 'E' },
+  { code: 'F', name: 'Cloud & SaaS',                      short: 'F' }
+];
+var COE_ITEMS = {
+  SETUP: [
+    "Hypervisor host(s) deployed (VMware vSphere / Microsoft Hyper-V)",
+    "Alternative hypervisor host (Proxmox VE / Nutanix AHV / OpenShift)",
+    "Veeam Data Platform — Backup & Replication (VBR) deployed",
+    "Veeam ONE deployed for monitoring & reporting",
+    "Veeam Software Appliance (hardened) deployed",
+    "Performance backup repository configured",
+    "Hardened Linux repository (immutable) configured",
+    "Object storage / Data Cloud Vault configured (offsite copy)",
+    "Isolated demo VLAN + SureBackup virtual lab network",
+    "Internet egress configured for SaaS / cloud demos",
+    "Sample workloads provisioned (Win/Linux, SQL, AD, NAS)",
+    "Cloud & SaaS tenants provisioned (M365, Entra, Salesforce, Azure/AWS/GCP)",
+    "Licensing applied (VDP Premium NFR)",
+    "Recovery Orchestrator deployed (VDP Premium)",
+    "Kubernetes cluster provisioned (for Kasten)"
+  ],
+  A: [
+    "Image-based backup of virtual machines",
+    "Physical & cloud server protection with Agents",
+    "Application-aware processing & granular restore (Explorers)",
+    "Replication & disaster-recovery failover",
+    "3-2-1-1-0 with immutable tiering",
+    "Site DR failover: VMware-to-VMware / Hyper-V-to-Hyper-V"
+  ],
+  B: [
+    "Instant VM Recovery",
+    "Instant database & file share recovery",
+    "Cross-platform & multi-hypervisor restore",
+    "Instant Recovery to Microsoft Azure"
+  ],
+  C: [
+    "SureBackup automated recovery verification",
+    "Clean restore with malware scanning (Secure Restore)",
+    "Data Integration API — reuse backups"
+  ],
+  D: [
+    "Immutable backups & Zero-Trust hardening",
+    "Inline malware & ransomware detection",
+    "Proactive threat hunting — Threat Hunter & Recon",
+    "Cyber recovery orchestration",
+    "Active Directory & identity forest recovery"
+  ],
+  E: [
+    "Kubernetes data protection with Veeam Kasten",
+    "NAS & unstructured data backup",
+    "Enterprise applications — Oracle & SAP HANA",
+    "Alternative hypervisors — Proxmox, AHV, OpenShift"
+  ],
+  F: [
+    "Microsoft 365 backup",
+    "Entra ID backup & recovery",
+    "Salesforce backup & restore",
+    "Cloud-native backup — AWS, Azure & Google Cloud"
+  ]
+};
+
+var COE_STATUS = ['Not started', 'In progress', 'Blocked', 'Done'];
+var COE_STATUS_VAL = { 'Not started': 0, 'In progress': 0.5, 'Blocked': 0, 'Done': 1 };
+var COE_RAG = ['On track', 'At risk', 'Delayed', 'Complete'];
+var COE_RAG_COLOR = { 'On track': '#00D15F', 'At risk': '#FE8A25', 'Delayed': '#ED2B3D', 'Complete': '#1CA8DD' };
+
+function coeItemId(code, i) { return code + '-' + (i + 1); }
+function coeItemIds(code) {
+  return (COE_ITEMS[code] || []).map(function (_, i) { return coeItemId(code, i); });
+}
+function coeAllIds() {
+  var out = [];
+  COE_DOMAINS.forEach(function (d) { out = out.concat(coeItemIds(d.code)); });
+  return out;
+}
+function coeTotalItems() { return coeAllIds().length; }
+function coeItemName(id) {
+  var m = String(id || '').match(/^(.+)-(\d+)$/);
+  if (!m) return id;
+  var list = COE_ITEMS[m[1]] || [];
+  return list[(+m[2]) - 1] || id;
+}
+function coeStatusOf(rec, id) {
+  var it = (rec && rec.items && rec.items[id]) || null;
+  var s = it && it.status;
+  return COE_STATUS.indexOf(s) > -1 ? s : 'Not started';
+}
+/* Percent complete across a set of ids — the same weighted mean the COE
+   dashboard used, rounded the same way. */
+function coePct(rec, ids) {
+  if (!ids || !ids.length) return 0;
+  var sum = 0;
+  ids.forEach(function (id) { sum += COE_STATUS_VAL[coeStatusOf(rec, id)]; });
+  return Math.round(sum / ids.length * 100);
+}
+function coeDomainPct(rec, code) { return coePct(rec, coeItemIds(code)); }
+function coeOverallPct(rec) { return coePct(rec, coeAllIds()); }
+function coeBlockers(rec) {
+  var n = 0;
+  coeAllIds().forEach(function (id) { if (coeStatusOf(rec, id) === 'Blocked') n++; });
+  return n;
+}
+function coeDoneCount(rec, code) {
+  var n = 0;
+  coeItemIds(code).forEach(function (id) { if (coeStatusOf(rec, id) === 'Done') n++; });
+  return n;
+}
+/* Heatmap colour — red at nothing through to green at complete. */
+function coeHeat(pct) {
+  if (pct <= 0) return '#E4E8EA';
+  return 'hsl(' + Math.round(pct * 1.2) + ',62%,46%)';
+}
+
+var COE_STR = ['id', 'partnerKey', 'name', 'region', 'owner', 'tier',
+               'targetGoLive', 'nextReview', 'rag', 'notes'];
+
+function normCoe(o) {
+  var r = {};
+  COE_STR.forEach(function (k) { r[k] = String(o[k] == null ? '' : o[k]).trim(); });
+  if (!r.id) r.id = uid('COE-');
+  if (COE_RAG.indexOf(r.rag) < 0) r.rag = 'On track';
+  r.targetGoLive = asDateStr(r.targetGoLive);
+  r.nextReview   = asDateStr(r.nextReview);
+
+  /* items arrive either as an object keyed by id, or as the flat JSON string
+     the Sheet stores in one cell. */
+  var raw = o.items;
+  if (typeof raw === 'string' && raw.trim()) {
+    try { raw = JSON.parse(raw); } catch (e) { raw = {}; }
+  }
+  r.items = {};
+  coeAllIds().forEach(function (id) {
+    var src = (raw && raw[id]) || {};
+    r.items[id] = {
+      status:   COE_STATUS.indexOf(src.status) > -1 ? src.status : 'Not started',
+      owner:    String(src.owner == null ? '' : src.owner).trim(),
+      target:   asDateStr(src.target),
+      verified: asDateStr(src.verified),
+      notes:    String(src.notes == null ? '' : src.notes).trim()
+    };
+  });
+
+  /* derived, never stored — same rule as every other computed field here */
+  r.pct       = coeOverallPct(r);
+  r.blockers  = coeBlockers(r);
+  r.done      = 0;
+  COE_DOMAINS.forEach(function (d) { r.done += coeDoneCount(r, d.code); });
+  r.total     = coeTotalItems();
+  r.domainPct = {};
+  COE_DOMAINS.forEach(function (d) { r.domainPct[d.code] = coeDomainPct(r, d.code); });
+  r.reviewDue = r.nextReview ? daysBetween(today(), r.nextReview) : null;
+  r.overdueReview = r.reviewDue != null && r.reviewDue < 0;
+  return r;
+}
+
+/* Dates in the COE file are d/m/Y; everything else here is ISO. */
+function asDateStr(v) {
+  var s = String(v == null ? '' : v).trim();
+  if (!s) return '';
+  var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return m[1] + '-' + pad(+m[2]) + '-' + pad(+m[3]);
+  m = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
+  if (m) return m[3] + '-' + pad(+m[2]) + '-' + pad(+m[1]);
+  var d = new Date(s);
+  return isNaN(d.getTime()) ? '' : ymd(d);
+}
+
 /* -------------------------------------------------------------- normalize */
 var ACT_STR = ['kind','type','title','oppId','customer','partner','partnerType','zone','location',
                'veeamStakeholder','se','audience','mode','category','product','link','stage',
@@ -495,6 +677,7 @@ var Store = {
   backend: 0, hasOutlook: false,
   outlook: [], outlookStatus: { connected: false, last: '', status: '', hourly: false, count: 0 },
   loaded: false, updated: '', availMap: {}, oppMap: {}, actsByOpp: {}, outlookMap: {},
+  coe: [], coeMap: {}, coeByPartner: {},
 
   /* ---- Outlook busy layer ----
      Never written into your painted availability. It sits underneath, so
@@ -599,6 +782,12 @@ var Store = {
 
   reindex: function () {
     forgetPlaces();          /* travel-city lookup is derived from the data */
+    var cm = {}, cbp = {};
+    (this.coe || []).forEach(function (c) {
+      cm[c.id] = c;
+      if (c.partnerKey) cbp[c.partnerKey] = c;
+    });
+    this.coeMap = cm; this.coeByPartner = cbp;
     var am = {}, om = {}, ab = {}, ol = {};
     this.outlook.forEach(function (o) {
       if (!o.date) return;
@@ -737,6 +926,8 @@ var Store = {
     this.opportunities = (j.opportunities || []).map(normOpp);
     this.availability  = (j.availability || []).map(normAvail);
     this.partners      = (j.partners || []).map(normPartner);
+
+    this.coe = (j.coe || []).map(normCoe);
     this.layout        = (j.layout || []).slice();
     this.applyLists(j.lists || {});
     this.outlook       = (j.outlook || []).map(function (o) {
@@ -1088,6 +1279,12 @@ global.APP = {
   whereDone: whereDone, isAway: isAway, isHomeCity: isHomeCity, homeBases: homeBases,
   travelStats: travelStats, travelDaysIndex: travelDaysIndex,
   normActivity: normActivity, normOpp: normOpp, normAvail: normAvail, normPartner: normPartner,
+  normCoe: normCoe, COE_DOMAINS: COE_DOMAINS, COE_ITEMS: COE_ITEMS, COE_STATUS: COE_STATUS,
+  COE_RAG: COE_RAG, COE_RAG_COLOR: COE_RAG_COLOR, COE_STATUS_VAL: COE_STATUS_VAL,
+  coeItemId: coeItemId, coeItemIds: coeItemIds, coeAllIds: coeAllIds, coeItemName: coeItemName,
+  coeOverallPct: coeOverallPct, coeDomainPct: coeDomainPct, coeBlockers: coeBlockers,
+  coeDoneCount: coeDoneCount, coeTotalItems: coeTotalItems, coeHeat: coeHeat,
+  coeStatusOf: coeStatusOf, asDateStr: asDateStr,
   partnerKey: partnerKey,
   Store: Store, Auth: Auth, apiUrl: apiUrl, setApiUrl: setApiUrl, apiIsOverridden: apiIsOverridden, L_DEFAULT: L_DEFAULT, EDITABLE_LISTS: EDITABLE_LISTS,
   NEEDS_BACKEND: 13,

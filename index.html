@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
 <title>Channel Command Center</title>
-<meta name="app-version" content="v25">
+<meta name="app-version" content="v26">
 <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
@@ -30,7 +30,7 @@
       <div id="diag" class="hide" style="margin-top:10px"></div>
     </div>
 
-    <div class="gatefoot" style="margin-top:10px"><b>v25</b> · built 2026-08-14</div>
+    <div class="gatefoot" style="margin-top:10px"><b>v26</b> · built 2026-10-07</div>
     <div class="gatefoot">
       Everything lives in your private Google Sheet — nothing is published in this
       website's files. Forgotten the token? Open the Sheet and use
@@ -101,6 +101,7 @@
     <button class="tab" data-tab="log">Daily Log <span class="cnt" id="cLog"></span></button>
     <button class="tab" data-tab="events">Events &amp; Trainings <span class="cnt" id="cEv"></span></button>
     <button class="tab" data-tab="pipe">Pipeline <span class="cnt" id="cPipe"></span></button>
+    <button class="tab" data-tab="coe">Partner COE <span class="cnt" id="cCoe"></span></button>
     <button class="tab" data-tab="avail">Availability</button>
     <button class="tab" data-tab="data">Data</button>
   </div>
@@ -234,6 +235,30 @@
   </section>
 
   <!-- ========================== AVAILABILITY ========================== -->
+  <!-- ========================== PARTNER COE ========================== -->
+  <section id="pane-coe" class="hide">
+    <div class="filters">
+      <div class="fw"><label>View</label><div class="seg" id="coeSeg">
+        <button class="on" data-cv="cards">Portfolio</button><button data-cv="heat">Heatmap</button>
+      </div></div>
+      <div class="fw"><label>Status</label><select id="coeRag"></select></div>
+      <div class="fw"><label>Region</label><select id="coeRegion"></select></div>
+      <div class="fw"><label>Sort</label><select id="coeSort">
+        <option value="pct-desc">Readiness, high to low</option>
+        <option value="pct-asc">Readiness, low to high</option>
+        <option value="blockers">Blockers first</option>
+        <option value="review">Next review soonest</option>
+        <option value="name">Partner name</option>
+      </select></div>
+      <div class="chip-count" id="coeCount"></div>
+      <button class="btn sm" id="coeNew" style="margin-bottom:2px">+ Add partner to COE</button>
+    </div>
+
+    <div class="kpis" id="coeKpis"></div>
+    <div id="coeCards"></div>
+    <div id="coeHeat" class="hide"></div>
+  </section>
+
   <section id="pane-avail" class="hide">
     <div class="card" style="margin-bottom:12px">
       <div class="calhead">
@@ -626,6 +651,40 @@
       <button class="btn" data-close>Close</button>
       <button class="btn" id="sTest">Test</button>
       <button class="btn p" id="sSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== PARTNER COE RECORD ===================== -->
+<div class="ov" id="ovCoe">
+  <div class="mo mo-wide">
+    <div class="mo-h"><h2 id="coeTitle">Partner COE</h2>
+      <span id="coeChip"></span><button class="x" data-close>&times;</button></div>
+    <div class="mo-b">
+      <div class="err" id="coeErr"></div>
+      <div class="fg">
+        <div class="sec">The partner</div>
+        <div class="f c2"><label>Partner <em>*</em></label>
+          <input id="coe_name" autocomplete="off" placeholder="type a partner name…">
+          <input type="hidden" id="coe_key">
+          <span class="hint" id="coe_nameHint">Links to your partner master — type a new name and it is added there too.</span></div>
+        <div class="f"><label>Region / zone</label><input id="coe_region" autocomplete="off"></div>
+        <div class="f"><label>Tier</label><input id="coe_tier" autocomplete="off"></div>
+        <div class="f c2"><label>Veeam owner (PDM / SE)</label><input id="coe_owner" autocomplete="off"></div>
+        <div class="f"><label>Target go-live</label><input type="date" id="coe_golive"></div>
+        <div class="f"><label>Next review</label><input type="date" id="coe_review"></div>
+        <div class="f"><label>Overall status</label><input id="coe_rag" autocomplete="off"></div>
+        <div class="f c3"><label>Notes / summary</label><input id="coe_notes"></div>
+        <div class="f c4 ro"><label>Readiness</label><input id="coe_pct" readonly></div>
+      </div>
+
+      <div class="coebar" id="coeProgress"></div>
+      <div id="coeDomains"></div>
+    </div>
+    <div class="mo-f">
+      <button class="btn dg" id="coeDel" style="margin-right:auto">Remove from COE</button>
+      <button class="btn" data-close>Cancel</button>
+      <button class="btn p" id="coeSave">Save</button>
     </div>
   </div>
 </div>

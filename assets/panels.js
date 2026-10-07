@@ -405,6 +405,80 @@ var PANELS = [
     ]);
   } },
 
+/* ------------------------------------------------------------ partner COE */
+{ id: 'coeready', title: 'Partner COE readiness', width: 'half',
+  render: function (el, c) {
+    var rows = S.coe.slice().sort(function (a, b) { return b.pct - a.pct; });
+    if (!rows.length) {
+      el.innerHTML = '<h3>Partner COE readiness</h3>' +
+        empty('No partners on the COE programme yet — add one from the Partner COE tab.');
+      return;
+    }
+    var avg = Math.round(rows.reduce(function (a, r) { return a + r.pct; }, 0) / rows.length);
+    el.innerHTML = '<h3>Partner COE readiness <span>\u2014 ' + rows.length + ' partners, ' +
+      avg + '% average</span></h3>' + canvas('p_coeready', rows.length > 6);
+    A.hbar('p_coeready', rows.map(function (r) { return r.name.length > 26 ? r.name.slice(0, 25) + '\u2026' : r.name; }),
+      rows.map(function (r) { return r.pct; }), '#00D15F', '% ready',
+      { onPick: function (i) { global.openCoe(rows[i].id); } });
+  } },
+
+{ id: 'coedomain', title: 'COE readiness by domain', width: 'half',
+  render: function (el, c) {
+    if (!S.coe.length) {
+      el.innerHTML = '<h3>COE readiness by domain</h3>' + empty('Nothing on the COE programme yet.');
+      return;
+    }
+    var labels = A.COE_DOMAINS.map(function (d) { return d.short; });
+    var vals = A.COE_DOMAINS.map(function (d) {
+      var t = S.coe.reduce(function (a, r) { return a + r.domainPct[d.code]; }, 0);
+      return Math.round(t / S.coe.length);
+    });
+    var weakest = A.COE_DOMAINS[vals.indexOf(Math.min.apply(null, vals))];
+    el.innerHTML = '<h3>COE readiness by domain <span>\u2014 averaged across partners</span></h3>' +
+      canvas('p_coedomain') +
+      '<div class="hint2">Weakest across the portfolio: <b>' + esc(weakest.name) + '</b>. ' +
+      'Each bar averages that domain over all COE partners, so it shows where enablement ' +
+      'effort pays back widest.</div>';
+    A.bar('p_coedomain', labels, [{ label: '% ready', data: vals,
+      backgroundColor: vals.map(function (v) { return A.coeHeat(v); }),
+      borderRadius: 3, maxBarThickness: 34 }], {
+      onPick: function (i) { A.toast(A.COE_DOMAINS[i].name + ' \u2014 ' + vals[i] + '% across the portfolio', 4500); }
+    });
+  } },
+
+{ id: 'coeattention', title: 'COE needs attention', width: 'half',
+  render: function (el, c) {
+    var blocked = S.coe.filter(function (r) { return r.blockers > 0; });
+    var due = S.coe.filter(function (r) { return r.reviewDue != null && r.reviewDue <= 7; });
+    var risk = S.coe.filter(function (r) { return r.rag === 'At risk' || r.rag === 'Delayed'; });
+    var html = '<h3>COE needs attention</h3>';
+    if (!blocked.length && !due.length && !risk.length) {
+      el.innerHTML = html + empty('Nothing blocked, nothing overdue for review, nothing off track.');
+      return;
+    }
+    var line = function (r, why, cls) {
+      return '<div class="ai ' + cls + '" data-coe="' + esc(r.id) + '" style="cursor:pointer">' +
+        '<div class="ic">' + r.pct + '%</div><div class="bd"><b>' + esc(r.name) + '</b> \u2014 ' + why + '</div></div>';
+    };
+    var out = [];
+    blocked.forEach(function (r) {
+      out.push(line(r, r.blockers + ' item' + (r.blockers > 1 ? 's' : '') + ' blocked', 'od'));
+    });
+    risk.forEach(function (r) {
+      if (!r.blockers) out.push(line(r, r.rag.toLowerCase(), 'ms'));
+    });
+    due.forEach(function (r) {
+      if (!r.blockers && risk.indexOf(r) < 0) {
+        out.push(line(r, r.reviewDue < 0 ? 'review ' + Math.abs(r.reviewDue) + ' days overdue'
+                                         : 'review in ' + r.reviewDue + ' days', 'st'));
+      }
+    });
+    el.innerHTML = html + '<div class="att">' + out.join('') + '</div>';
+    A.$$('[data-coe]', el).forEach(function (x) {
+      x.onclick = function () { global.openCoe(x.dataset.coe); };
+    });
+  } },
+
 /* ------------------------------------------------------------ travel time */
 { id: 'traveltime', title: 'Travel vs meeting time', width: 'half',
   render: function (el, c) {

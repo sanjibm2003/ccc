@@ -914,6 +914,7 @@ function saveLayout() {
 }
 window.renderDash = renderDash;
 window.setDrill = setDrill;      /* panels.js drills through this */
+window.openCoe = openCoe;        /* COE panels open a record */
 window.gotoPipeline = function (stage) {
   setTab('pipe');
   $('#pStage').value = stage || '';
@@ -1222,6 +1223,295 @@ function renderOppTable(rows) {
   $$('#tblOpp tbody tr[data-id]').forEach(function (tr) { tr.onclick = function () { openOppView(tr.dataset.id); }; });
   wireRowSelection('pipe');
   refreshBulkBars();
+}
+
+
+/* ====================================================================== */
+/*  PARTNER COE                                                           */
+/* ====================================================================== */
+/* The readiness model from the standalone COE dashboard, now reading and
+   writing the same Google Sheet as everything else. The old tool kept its
+   portfolio in localStorage — one browser, one machine, gone with a cache
+   clear. */
+var coeView = 'cards', editCoe = null, coeDraft = null;
+
+function coeRows() {
+  var rag = $('#coeRag').value, reg = $('#coeRegion').value, sort = $('#coeSort').value;
+  var rows = S.coe.filter(function (c) {
+    if (rag && c.rag !== rag) return false;
+    if (reg && c.region !== reg) return false;
+    return true;
+  });
+  var by = {
+    'pct-desc':  function (a, b) { return b.pct - a.pct; },
+    'pct-asc':   function (a, b) { return a.pct - b.pct; },
+    'blockers':  function (a, b) { return b.blockers - a.blockers || a.pct - b.pct; },
+    'review':    function (a, b) { return String(a.nextReview || '9999').localeCompare(String(b.nextReview || '9999')); },
+    'name':      function (a, b) { return String(a.name).localeCompare(String(b.name)); }
+  };
+  return rows.slice().sort(by[sort] || by['pct-desc']);
+}
+
+function renderCoe() {
+  fillSel($('#coeRag'), A.COE_RAG, 'Any status');
+  fillSel($('#coeRegion'), S.uniq('coe', 'region'), 'All regions');
+  var rows = coeRows();
+  $('#cCoe').textContent = S.coe.length;
+  $('#coeCount').textContent = rows.length + ' of ' + S.coe.length + ' partners';
+
+  /* headline numbers across the portfolio */
+  var avg = rows.length ? Math.round(rows.reduce(function (a, c) { return a + c.pct; }, 0) / rows.length) : 0;
+  var blk = rows.reduce(function (a, c) { return a + c.blockers; }, 0);
+  var due = rows.filter(function (c) { return c.reviewDue != null && c.reviewDue <= 7; }).length;
+  var ready = rows.filter(function (c) { return c.pct >= 80; }).length;
+  $('#coeKpis').innerHTML =
+    kpi('Partners in COE', rows.length, S.coe.length + ' on the programme', 'acc') +
+    kpi('Average readiness', avg + '%', 'across ' + A.coeTotalItems() + ' items each', 'acc') +
+    kpi('Blockers', blk, blk ? 'need clearing' : 'nothing blocked', blk ? 'bad' : '') +
+    kpi('Reviews due', due, 'within 7 days' + (ready ? ' · ' + ready + ' at 80%+' : ''), due ? 'warn' : '');
+
+  $('#coeCards').classList.toggle('hide', coeView !== 'cards');
+  $('#coeHeat').classList.toggle('hide', coeView !== 'heat');
+  if (coeView === 'cards') renderCoeCards(rows); else renderCoeHeat(rows);
+}
+
+function renderCoeCards(rows) {
+  if (!rows.length) {
+    $('#coeCards').innerHTML = '<div class="empty">No COE partners yet. Press ' +
+      '<b>+ Add partner to COE</b> to put one on the programme.</div>';
+    return;
+  }
+  $('#coeCards').innerHTML = '<div class="coecards">' + rows.map(function (c) {
+    var col = A.COE_RAG_COLOR[c.rag] || '#929BA5';
+    return '<div class="coec" data-coe="' + esc(c.id) + '">' +
+      '<div class="ch"><div style="flex:1;min-width:0">' +
+        '<div class="nm">' + esc(c.name) + '</div>' +
+        '<div class="meta">' + esc([c.tier, c.region, c.owner].filter(Boolean).join(' · ') || '—') + '</div>' +
+      '</div><span class="ragchip" style="background:' + col + '">' + esc(c.rag) + '</span></div>' +
+      '<div class="big" style="color:' + A.coeHeat(c.pct) + '">' + c.pct + '%</div>' +
+      '<div class="track"><i style="width:' + c.pct + '%;background:' + A.coeHeat(c.pct) + '"></i></div>' +
+      '<div class="meta">' + c.done + ' of ' + c.total + ' items done' +
+        (c.blockers ? ' · <span class="blk">' + c.blockers + ' blocked</span>' : '') + '</div>' +
+      '<div class="dots">' + A.COE_DOMAINS.map(function (d) {
+        var pv = c.domainPct[d.code];
+        return '<span class="dot7" style="background:' + A.coeHeat(pv) + '" title="' +
+               esc(d.name) + ' — ' + pv + '%">' + esc(d.short) + ' ' + pv + '</span>';
+      }).join('') + '</div>' +
+      '<div class="foot">' +
+        '<span>Go-live <b>' + (c.targetGoLive ? esc(A.niceDate(c.targetGoLive)) : '—') + '</b></span>' +
+        '<span>Review <b' + (c.overdueReview ? ' style="color:var(--red)"' : '') + '>' +
+          (c.nextReview ? esc(A.niceDate(c.nextReview)) : '—') +
+          (c.reviewDue != null ? ' (' + (c.reviewDue < 0 ? Math.abs(c.reviewDue) + 'd late' : c.reviewDue + 'd') + ')' : '') +
+        '</b></span>' +
+      '</div>' +
+      (c.notes ? '<div class="meta" style="margin-top:7px">' + esc(c.notes) + '</div>' : '') +
+      '</div>';
+  }).join('') + '</div>';
+  $$('#coeCards [data-coe]').forEach(function (el) {
+    el.onclick = function () { openCoe(el.dataset.coe); };
+  });
+}
+
+function renderCoeHeat(rows) {
+  if (!rows.length) { $('#coeHeat').innerHTML = '<div class="empty">Nothing to show.</div>'; return; }
+  var h = '<div class="coeheat"><table><thead><tr><th class="pn">Partner</th>' +
+    A.COE_DOMAINS.map(function (d) {
+      return '<th class="n" title="' + esc(d.name) + '">' + esc(d.short) + '</th>';
+    }).join('') + '<th class="n">Overall</th><th class="n">Blockers</th></tr></thead><tbody>';
+  rows.forEach(function (c) {
+    h += '<tr data-coe="' + esc(c.id) + '" style="cursor:pointer"><td class="pn">' + esc(c.name) + '</td>' +
+      A.COE_DOMAINS.map(function (d) {
+        var pv = c.domainPct[d.code];
+        return '<td class="hc" style="background:' + A.coeHeat(pv) + '" title="' + esc(d.name) +
+               ' — ' + A.coeDoneCount(c, d.code) + ' of ' + A.coeItemIds(d.code).length + ' done">' + pv + '</td>';
+      }).join('') +
+      '<td class="hc" style="background:' + A.coeHeat(c.pct) + '">' + c.pct + '</td>' +
+      '<td class="n' + (c.blockers ? ' blk' : '') + '">' + (c.blockers || '—') + '</td></tr>';
+  });
+  h += '</tbody></table></div>' +
+    '<div class="hint2">Each cell is that domain\'s readiness. Hover for the item count; click a row to open it.</div>';
+  $('#coeHeat').innerHTML = h;
+  $$('#coeHeat [data-coe]').forEach(function (tr) {
+    tr.onclick = function () { openCoe(tr.dataset.coe); };
+  });
+}
+
+/* ------------------------------------------------------------ the editor */
+function openCoe(id) {
+  editCoe = id || null;
+  var rec = id ? S.coeMap[id] : null;
+  coeDraft = A.normCoe(rec ? JSON.parse(JSON.stringify(rec)) : {});
+  if (!rec) coeDraft.id = A.uid('COE-');
+
+  $('#coeTitle').textContent = rec ? 'Partner COE' : 'Add a partner to the COE';
+  $('#coeDel').style.display = rec ? '' : 'none';
+  $('#coeErr').classList.remove('show');
+
+  /* partner picker, linked to the master */
+  Combo.set('#coe_name', S.partners.map(function (p) { return p.name; }), {
+    allowNew: true,
+    onNew: function (v) { coeNewPartner(v); },
+    onPick: function (v, isNew) {
+      if (isNew) return;
+      var p = S.partners.filter(function (x) { return x.name === v; })[0];
+      if (p) {
+        $('#coe_key').value = p.key || '';
+        if (!$('#coe_tier').value) $('#coe_tier').value = p.tier || '';
+        if (!$('#coe_region').value) $('#coe_region').value = p.zone || '';
+        if (!$('#coe_owner').value) $('#coe_owner').value = p.owner || '';
+      }
+    }
+  });
+  Combo.set('#coe_region', A.L.zone, { allowNew: true, onNew: function (v) { addListValue('zone', v); } });
+  Combo.set('#coe_tier',   A.L.tier, { allowNew: true, onNew: function (v) { addListValue('tier', v); } });
+  Combo.set('#coe_rag',    A.COE_RAG, { allowNew: false });
+  Combo.set('#coe_owner',  uniqAll('veeamStakeholder'), { allowNew: true });
+
+  var v = function (sel, val) { $(sel).value = val == null ? '' : val; };
+  v('#coe_name', coeDraft.name);
+  v('#coe_key', coeDraft.partnerKey);
+  v('#coe_region', coeDraft.region);
+  v('#coe_tier', coeDraft.tier);
+  v('#coe_owner', coeDraft.owner);
+  v('#coe_golive', coeDraft.targetGoLive);
+  v('#coe_review', coeDraft.nextReview);
+  v('#coe_rag', coeDraft.rag);
+  v('#coe_notes', coeDraft.notes);
+
+  renderCoeItems();
+  $('#ovCoe').classList.add('open');
+  setTimeout(function () { $('#coe_name').focus(); }, 60);
+}
+
+/* A partner named here that is not in the master gets added, so tier and zone
+   live in one place rather than two. */
+function coeNewPartner(name) {
+  var v = String(name || '').trim();
+  if (!v) return Promise.resolve(false);
+  var rec = A.normPartner({
+    key: A.slug(v), name: v,
+    type: 'Partner',
+    tier: $('#coe_tier').value || '',
+    zone: $('#coe_region').value || '',
+    owner: $('#coe_owner').value || '',
+    sources: 'Partner COE'
+  });
+  return S.api('savePartner', rec).then(function () {
+    S.upsert('partners', rec, A.normPartner);
+    $('#coe_key').value = rec.key;
+    $('#coe_name').value = v;
+    Combo.set('#coe_name', S.partners.map(function (p) { return p.name; }), {});
+    A.toast('“' + v + '” added to your partner master');
+    return true;
+  }).catch(function (e) {
+    A.toast('Could not add the partner: ' + e.message + ' — the name is still on this record', 7000);
+    return false;
+  });
+}
+
+function coeCollectHeader() {
+  coeDraft.name         = $('#coe_name').value.trim();
+  coeDraft.partnerKey   = $('#coe_key').value.trim();
+  coeDraft.region       = $('#coe_region').value.trim();
+  coeDraft.tier         = $('#coe_tier').value.trim();
+  coeDraft.owner        = $('#coe_owner').value.trim();
+  coeDraft.targetGoLive = $('#coe_golive').value;
+  coeDraft.nextReview   = $('#coe_review').value;
+  coeDraft.rag          = $('#coe_rag').value.trim();
+  coeDraft.notes        = $('#coe_notes').value.trim();
+}
+
+function renderCoeItems() {
+  var live = A.normCoe(coeDraft);
+  $('#coe_pct').value = live.pct + '%  ·  ' + live.done + ' of ' + live.total + ' done' +
+    (live.blockers ? '  ·  ' + live.blockers + ' blocked' : '');
+  $('#coeProgress').innerHTML = '<i style="width:' + live.pct + '%"></i>';
+  $('#coeChip').innerHTML = '<span class="ragchip" style="background:' +
+    (A.COE_RAG_COLOR[live.rag] || '#929BA5') + '">' + esc(live.rag) + '</span>';
+
+  $('#coeDomains').innerHTML = A.COE_DOMAINS.map(function (d) {
+    var ids = A.coeItemIds(d.code), pv = A.coeDomainPct(coeDraft, d.code);
+    return '<div class="domain" data-dom="' + d.code + '">' +
+      '<div class="dhead"><span class="dn">' + esc(d.name) + '</span>' +
+        '<span class="src">' + A.coeDoneCount(coeDraft, d.code) + '/' + ids.length + '</span>' +
+        '<span class="dp" style="color:' + A.coeHeat(pv) + '">' + pv + '%</span></div>' +
+      '<div class="dbody">' +
+        '<div class="cihead"><span>Item</span><span>Status</span><span>Owner</span>' +
+          '<span>Target</span><span>Verified</span><span>Notes</span></div>' +
+        ids.map(function (id, i) {
+          var it = coeDraft.items[id] || {};
+          var st = it.status || 'Not started';
+          var cls = st === 'Done' ? 'st-Done' : st === 'Blocked' ? 'st-Blocked'
+                  : st === 'In progress' ? 'st-In' : '';
+          return '<div class="ci">' +
+            '<span class="cname">' + esc(A.COE_ITEMS[d.code][i]) + '</span>' +
+            '<select data-ci="' + id + '" data-fld="status" class="' + cls + '">' +
+              A.COE_STATUS.map(function (o) {
+                return '<option' + (o === st ? ' selected' : '') + '>' + esc(o) + '</option>';
+              }).join('') + '</select>' +
+            '<input data-ci="' + id + '" data-fld="owner" value="' + esc(it.owner || '') + '" placeholder="who">' +
+            '<input data-ci="' + id + '" data-fld="target" type="date" value="' + esc(it.target || '') + '">' +
+            '<input data-ci="' + id + '" data-fld="verified" type="date" value="' + esc(it.verified || '') + '">' +
+            '<input data-ci="' + id + '" data-fld="notes" value="' + esc(it.notes || '') + '" placeholder="note">' +
+            '</div>';
+        }).join('') +
+      '</div></div>';
+  }).join('');
+
+  $$('#coeDomains .dhead').forEach(function (h) {
+    h.onclick = function () { h.parentNode.classList.toggle('closed'); };
+  });
+  $$('#coeDomains [data-ci]').forEach(function (el) {
+    el.onchange = function () {
+      var id = el.dataset.ci, fld = el.dataset.fld;
+      if (!coeDraft.items[id]) coeDraft.items[id] = { status: 'Not started', owner: '', target: '', verified: '', notes: '' };
+      coeDraft.items[id][fld] = el.value;
+      /* marking something Done with no verified date fills today's, since that
+         is what "verified" means in practice */
+      if (fld === 'status' && el.value === 'Done' && !coeDraft.items[id].verified) {
+        coeDraft.items[id].verified = A.today();
+      }
+      if (fld === 'status') renderCoeItems();      /* colours and totals move */
+      else {
+        var live2 = A.normCoe(coeDraft);
+        $('#coe_pct').value = live2.pct + '%  ·  ' + live2.done + ' of ' + live2.total + ' done' +
+          (live2.blockers ? '  ·  ' + live2.blockers + ' blocked' : '');
+      }
+    };
+  });
+}
+
+function saveCoeRec() {
+  coeCollectHeader();
+  if (!coeDraft.name) { showErr('#coeErr', 'Pick or type a partner name.'); return; }
+  var rec = A.normCoe(coeDraft);
+  $('#coeSave').disabled = true;
+  S.api('saveCoe', {
+    id: rec.id, partnerKey: rec.partnerKey, name: rec.name, region: rec.region,
+    owner: rec.owner, tier: rec.tier, targetGoLive: rec.targetGoLive,
+    nextReview: rec.nextReview, rag: rec.rag, notes: rec.notes,
+    items: JSON.stringify(rec.items)
+  }).then(function () {
+    S.upsert('coe', rec, A.normCoe);
+    A.toast(rec.name + ' saved — ' + rec.pct + '% ready');
+    $('#ovCoe').classList.remove('open');
+    refresh();
+  }).catch(function (e) {
+    showErr('#coeErr', 'Saved locally but the Sheet said: ' + esc(e.message));
+  }).then(function () { $('#coeSave').disabled = false; });
+}
+
+function deleteCoeRec() {
+  if (!editCoe) return;
+  var rec = S.coeMap[editCoe];
+  if (!confirm('Remove ' + (rec ? rec.name : 'this partner') + ' from the COE programme?\n\n' +
+               'The partner stays in your master; only the readiness record goes.')) return;
+  S.api('deleteCoe', { id: editCoe }).then(function () {
+    S.remove('coe', editCoe);
+    A.toast('Removed from the COE');
+    $('#ovCoe').classList.remove('open');
+    refresh();
+  }).catch(function (e) { showErr('#coeErr', e.message); });
 }
 
 /* ====================================================================== */
@@ -2032,6 +2322,13 @@ function renderData() {
     'merge them with <b>Rename everywhere</b> if one is a typo',
     function () { pipeView = 'table'; setDrill('Customers with more than one deal', 'opportunities', dupes, 'pipe'); });
 
+  /* A COE record whose partner is no longer in the master. */
+  var coeOrphan = S.coe.filter(function (c) {
+    return c.partnerKey && !S.partners.some(function (p) { return p.key === c.partnerKey; });
+  });
+  if (coeOrphan.length) push('od', 'COE link', '<b>' + coeOrphan.length + ' COE records</b> point at a partner ' +
+    'that is no longer in your master list', function () { setTab('coe'); });
+
   var orphan = S.activities.filter(function (a) { return a.oppId && !S.oppMap[a.oppId]; });
   if (orphan.length) push('od', 'Orphans', '<b>' + orphan.length + ' activities</b> point at an opportunity that no longer exists',
     function () { setDrill('Activities pointing at a deleted opportunity', 'activities', orphan, 'log'); });
@@ -2189,6 +2486,24 @@ function wireBulkButtons() {
   /* Rename everywhere. */
   var rn = $('#rnGo');
   if (rn) rn.onclick = doRename;
+
+  /* Partner COE */
+  var cn = $('#coeNew');
+  if (cn) cn.onclick = function () { openCoe(null); };
+  var cs = $('#coeSave');
+  if (cs) cs.onclick = saveCoeRec;
+  var cd = $('#coeDel');
+  if (cd) cd.onclick = deleteCoeRec;
+  ['#coeRag','#coeRegion','#coeSort'].forEach(function (sel) {
+    var el = $(sel); if (el) el.onchange = renderCoe;
+  });
+  $$('#coeSeg button').forEach(function (b) {
+    b.onclick = function () {
+      coeView = b.dataset.cv;
+      $$('#coeSeg button').forEach(function (x) { x.classList.toggle('on', x === b); });
+      renderCoe();
+    };
+  });
 }
 /* Untick without redrawing the whole table. */
 function repaintSel(t) {
@@ -2481,8 +2796,23 @@ function previewImport(text) {
  */
 function runImport() {
   if (!importPayload) return;
-  if (!confirm('This replaces everything currently in the Google Sheet. Continue?')) return;
   var p = importPayload;
+  /* Name what is actually about to be replaced, and what is not. The old wording
+     said "everything" whatever the file held, which is alarming and — for a file
+     covering one section — simply untrue. A section absent from the file is never
+     written to, so it must not be listed as at risk. */
+  var LABEL = { activities: 'Daily log', opportunities: 'Pipeline',
+                partners: 'Partners', availability: 'Availability',
+                coe: 'Partner COE', lists: 'Dropdown lists', layout: 'Dashboard layout' };
+  var hits = [], safe = [];
+  Object.keys(LABEL).forEach(function (k) {
+    var v = p[k], n = Array.isArray(v) ? v.length : (v ? Object.keys(v).length : 0);
+    (n ? hits : safe).push(LABEL[k] + (n ? ' (' + n + ')' : ''));
+  });
+  if (!hits.length) { showErr('#impErr', 'That file has nothing in it to import.'); return; }
+  if (!confirm('This REPLACES, in your Google Sheet:\n\n  • ' + hits.join('\n  • ') +
+               (safe.length ? '\n\nLeft completely untouched:\n\n  • ' + safe.join('\n  • ') : '') +
+               '\n\nContinue?')) return;
   /* Big arrays go up in batches, so no single request is large. The first batch
      of each part clears the tab; the rest append. */
   var BATCH = 60;
@@ -2498,6 +2828,8 @@ function runImport() {
                    n: slice.length });
     }
   });
+  if (p.coe && p.coe.length)
+    parts.push({ part: 'coe', records: p.coe, wipe: true, label: 'COE records', n: p.coe.length });
   if (p.lists && Object.keys(p.lists).length)
     parts.push({ part: 'lists', records: p.lists, wipe: true, label: 'lists', n: Object.keys(p.lists).length });
   if (p.layout && p.layout.length)
@@ -2619,6 +2951,7 @@ function render() {
   if (curTab === 'log') renderLog();
   if (curTab === 'events') renderEvents();
   if (curTab === 'pipe') renderPipe();
+  if (curTab === 'coe') renderCoe();
   if (curTab === 'avail') renderAvail();
   if (curTab === 'data') renderData();
 }
@@ -2626,7 +2959,7 @@ function refresh() { S.reindex(); buildFilters(); render(); }
 function setTab(t) {
   curTab = t;
   $$('.tab').forEach(function (b) { b.classList.toggle('on', b.dataset.tab === t); });
-  ['dash','log','events','pipe','avail','data'].forEach(function (k) {
+  ['dash','log','events','pipe','coe','avail','data'].forEach(function (k) {
     $('#pane-' + k).classList.toggle('hide', k !== t);
   });
   render();
@@ -2636,7 +2969,7 @@ function start() {
   $('#subline').textContent = (CFG.ownerName || '') + (CFG.ownerRole ? ' · ' + CFG.ownerRole : '');
   $('#srcLabel').textContent = S.activities.length + ' activities · ' + S.opportunities.length + ' opportunities';
   $('#footer').innerHTML = esc(CFG.ownerName) + ' · all times ' + esc(CFG.timezoneLabel) +
-    ' · everything stored in your private Google Sheet · <b>v25</b>';
+    ' · everything stored in your private Google Sheet · <b>v26</b>';
   layout = normLayout(S.layout && S.layout.length ? S.layout : defaultLayout());
 
   /* The commonest upgrade mistake: new Code.gs pasted, but no new deployment. */
@@ -2885,9 +3218,13 @@ function wire() {
       if (a === 'ics') A.downloadIcs(S.activities.filter(function (r) {
         return r.date >= A.today() && r.status !== 'Cancelled'; }), 'upcoming');
       if (a === 'backup') {
+        /* Every section the importer can restore has to be in here, or a backup
+           quietly loses whatever is missing. coe and lists were not. */
         A.download('workspace-backup-' + A.today() + '.json', JSON.stringify({
-          generated: new Date().toISOString(), activities: S.activities, opportunities: S.opportunities,
-          availability: S.availability, partners: S.partners, layout: layout }, null, 1), 'application/json');
+          version: 26, generated: new Date().toISOString(),
+          activities: S.activities, opportunities: S.opportunities,
+          availability: S.availability, partners: S.partners,
+          coe: S.coe, lists: S.lists, layout: layout }, null, 1), 'application/json');
         A.toast('Backup downloaded — keep it private');
       }
       if (a === 'import') $('#ovImp').classList.add('open');
