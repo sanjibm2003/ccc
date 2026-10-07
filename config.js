@@ -23,7 +23,7 @@ window.SITE_CONFIG = {
   /* --- Google Sheet backend ----------------------------------------
      Paste the Apps Script Web App URL here after deploying it.
      Must end in /exec.  See apps-script/SETUP.md                      */
-  apiUrl: 'https://script.google.com/macros/s/AKfycbzceMkYzA9-RWzyvlm-fDInvel516piE45yPBDroAGNbsrK_302WCXb-at3DXeLAlsw/exec',
+  apiUrl: 'https://script.google.com/macros/s/AKfycbwXEtr6Cs2p7q5l-diE5Tn6EPHYuCNX_W0LLMiV7oS1OYBNb6c_QJ0jwC72_YvLQGLu9g/exec',
 
   /* --- availability grid ------------------------------------------- */
   dayStart: '09:00',
